@@ -80,13 +80,14 @@ input <- prepare_rema_input(model_name = 'BSAI shortraker BTS + LLS',
                             cpue_dat = cpue_dat,
                             sum_cpue_index = 1, # is the CPUE index summable (yes = 1, RPWs are summable)
                             zeros = list(assumption = 'NA'),
+                            end_year = YEAR,
                             # sort(unique(biomass_dat$strata)) = "Central AI"
                             # "Eastern AI" "EBS Slope" "SBS" "Western AI". EBS
                             # Slope is stratum 3 for the biomass so we put it in
                             # the third position of the
                             # pointer_biomass_cpue_strata object and use NAs for
                             # the other 4 strata. It is the first (and only)
-                            # stratum for the Longline survey, so we use the
+                            # stratum for the LLS, so we use the
                             # value of 1. See Details in ?prepare_rema_input
                             q_options = list(pointer_biomass_cpue_strata = c(NA, NA, 1, NA, NA)))
 
@@ -123,4 +124,5 @@ cowplot::plot_grid(osa$plots$cpue_resids,
 
 compare <- compare_rema_models(list(m,m2))
 compare$plots$biomass_by_strata
+compare$plots$total_predicted_biomass
 compare$output$parameter_estimates
