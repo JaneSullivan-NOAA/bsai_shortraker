@@ -33,7 +33,7 @@ cpue_dat <- read_csv(paste0(dat_path, "/bsai_shortraker_rpw_", YEAR, ".csv"))
 # Mod 1: BTS only ----
 
 # (1) Prepare REMA model inputs
-?prepare_rema_input # note alternative methods for bringing in survey data observations
+# ?prepare_rema_input # note alternative methods for bringing in survey data observations
 
 # status quo model
 input <- prepare_rema_input(model_name = 'BSAI shortraker BTS',
@@ -42,35 +42,23 @@ input <- prepare_rema_input(model_name = 'BSAI shortraker BTS',
                             end_year = YEAR)
 
 # (2) Fit REMA model
-?fit_rema
+# ?fit_rema
 m <- fit_rema(input)
 
-# (3) Check convergence criteria if you so wish
-?check_convergence
-check_convergence(m)
-
-# (4) Get tidied data.frames from the REMA model output
-?tidy_rema
+# (3) Get tidied data.frames from the REMA model output
+# ?tidy_rema
 output <- tidy_rema(rema_model = m)
 names(output)
 output$parameter_estimates # estimated fixed effects parameters
 output$biomass_by_strata # data.frame of predicted and observed biomass by stratum
 output$total_predicted_biomass # total predicted biomass (same as biomass_by_strata for univariate models)
 
-# (6) Generate model plots
-?plot_rema
+# (4) Generate model plots
+# ?plot_rema
 plots <- plot_rema(tidy_rema = output,
                    # optional y-axis label
                    biomass_ylab = 'Biomass (t)')
 plots$biomass_by_strata
-
-# (7) Get one-step-ahead (OSA) residuals
-osa <- get_osa_residuals(m)
-osa$residuals
-cowplot::plot_grid(osa$plots$biomass_resids,
-                   osa$plots$biomass_qqplot,
-                   osa$plots$biomass_hist,
-                   osa$plots$biomass_fitted)
 
 # BTS + LLS ----
 
@@ -92,8 +80,6 @@ input <- prepare_rema_input(model_name = 'BSAI shortraker BTS + LLS',
                             q_options = list(pointer_biomass_cpue_strata = c(NA, NA, 1, NA, NA)))
 
 m2 <- fit_rema(input)
-m2$report()
-check_convergence(m2)
 
 output <- tidy_rema(rema_model = m2)
 output$parameter_estimates # estimated fixed effects parameters
@@ -108,21 +94,80 @@ plots <- plot_rema(tidy_rema = output,
 plots$biomass_by_strata
 plots$cpue_by_strata
 
-# (7) Get one-step-ahead (OSA) residuals
-osa <- get_osa_residuals(m2)
-osa$residuals
-cowplot::plot_grid(osa$plots$biomass_resids,
-                   osa$plots$biomass_qqplot,
-                   osa$plots$biomass_hist,
-                   osa$plots$biomass_fitted)
-cowplot::plot_grid(osa$plots$cpue_resids,
-                   osa$plots$cpue_qqplot,
-                   osa$plots$cpue_hist,
-                   osa$plots$cpue_fitted)
+# alternative models ----
+
+# share PE
+input <- prepare_rema_input(model_name = 'BSAI shortraker BTS + LLS share PE',
+                            multi_survey = 1, 
+                            biomass_dat = biomass_dat,
+                            cpue_dat = cpue_dat,
+                            sum_cpue_index = 1, 
+                            zeros = list(assumption = 'NA'),
+                            end_year = YEAR,
+                            PE_options = list(pointer_PE_biomass = c(1, 1, 2, 2, 1)),
+                            q_options = list(pointer_biomass_cpue_strata = c(NA, NA, 1, NA, NA)))
+
+m3 <- fit_rema(input)
+tidy_rema(m3)$parameter_estimates
+
+compare_rema_models(list(m2, m3))$aic
+
+# extra biomass variance ----
+
+input <- prepare_rema_input(model_name = 'BSAI shortraker BTS + LLS xtra biom var',
+                            multi_survey = 1, 
+                            biomass_dat = biomass_dat,
+                            cpue_dat = cpue_dat,
+                            sum_cpue_index = 1, 
+                            zeros = list(assumption = 'NA'),
+                            end_year = YEAR,
+                            PE_options = list(pointer_PE_biomass = c(1, 1, 1, 1, 1)),
+                            q_options = list(pointer_biomass_cpue_strata = c(NA, NA, 1, NA, NA)),
+                            extra_biomass_cv = list(assumption = 'extra_cv'))
+
+m4 <- fit_rema(input)
+
+# extra cpue variance ----
+
+input <- prepare_rema_input(model_name = 'BSAI shortraker BTS + LLS xtra cpue var',
+                            multi_survey = 1, 
+                            biomass_dat = biomass_dat,
+                            cpue_dat = cpue_dat,
+                            sum_cpue_index = 1, 
+                            zeros = list(assumption = 'NA'),
+                            end_year = YEAR,
+                            PE_options = list(pointer_PE_biomass = c(1, 1, 1, 1, 1)),
+                            q_options = list(pointer_biomass_cpue_strata = c(NA, NA, 1, NA, NA)),
+                            extra_cpue_cv = list(assumption = 'extra_cv'))
+
+m5 <- fit_rema(input)
+
+# extra biomass + cpue variance ----
+
+input <- prepare_rema_input(model_name = 'BSAI shortraker BTS + LLS xtra biom & cpue var',
+                            multi_survey = 1, 
+                            biomass_dat = biomass_dat,
+                            cpue_dat = cpue_dat,
+                            sum_cpue_index = 1, 
+                            zeros = list(assumption = 'NA'),
+                            end_year = YEAR,
+                            PE_options = list(pointer_PE_biomass = c(1, 1, 1, 1, 1)),
+                            q_options = list(pointer_biomass_cpue_strata = c(NA, NA, 1, NA, NA)),
+                            extra_biomass_cv = list(assumption = 'extra_cv'),
+                            extra_cpue_cv = list(assumption = 'extra_cv'))
+
+m6 <- fit_rema(input)
+
+compare <- compare_rema_models(list(m2, m3, m4, m5, m6))
+compare$aic
+
+compare <- compare_rema_models(list(m2, m4, m6))
+compare$plots$biomass_by_strata
+compare$plots$total_predicted_biomass
 
 # Model comparisons -----
 
-compare <- compare_rema_models(list(m,m2))
+compare <- compare_rema_models(list(m,m2, m3))
 compare$plots$biomass_by_strata
 compare$plots$total_predicted_biomass
 compare$output$parameter_estimates
