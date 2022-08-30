@@ -11,7 +11,7 @@ if(length(libs[which(libs %in% rownames(installed.packages()) == FALSE )]) > 0) 
 lapply(libs, library, character.only = TRUE)
 
 # install.packages("devtools")
-devtools::install_github("JaneSullivan-NOAA/rema", dependencies = TRUE)
+# devtools::install_github("afsc-assessments/rema", dependencies = TRUE, build_vignettes = TRUE)
 library(rema)
 
 # folder set up
