@@ -58,9 +58,13 @@ ai <- ai %>%
   left_join(areas) %>% 
   arrange(species_code, year) %>% 
   mutate(area = case_when(area == "Southern Bering Sea" ~ "SBS",
-                          area == "Eastern Aleutians" ~ "Eastern AI",
-                          area == "Western Aleutians" ~ "Western AI",
-                          area == "Central Aleutians" ~ "Central AI"))
+                          area == "Eastern Aleutians" ~ "AI",
+                          area == "Western Aleutians" ~ "AI",
+                          area == "Central Aleutians" ~ "AI"))
+ai <- ai %>% 
+  group_by(year, area) %>% 
+  summarize(biomass = sum(biomass),
+            var = sum(var))
 
 # EBS shelf ----
 
@@ -88,6 +92,7 @@ query <- "select   year, species_code,
 
 ebs_slope <- sqlQuery(channel_akfin, query) %>% 
   write_csv(paste0(raw_path, "/ebs_slope_biomass_raw_", YEAR, ".csv"))
+
 
 ebs_slope <- ebs_slope %>% 
   rename_all(tolower) %>% 
@@ -131,4 +136,3 @@ ggplot() +
   geom_line(data = cpue_dat, aes(x = year, y = cpue), col = 'green') + 
   geom_point(data = cpue_dat, aes(x = year, y = cpue), col = 'green') + 
   facet_wrap(~strata) 
-
