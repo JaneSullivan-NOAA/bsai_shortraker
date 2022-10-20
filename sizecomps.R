@@ -1,11 +1,11 @@
-# Biological data (length comps) for SST and Duskies
-# Contact: jane.sullivan@noaa.gov
-# Last updated: Oct 2020
+# Biological data (length comps) for shortraker
+# Contact: kalei.shotwell@noaa.gov
+# Last updated: Oct 2022
 
 # devtools::session_info()
-# version  R version 4.0.2 (2020-06-22)
-# os       Windows 10 x64              
-# system   x86_64, mingw32             
+# version  R version 4.2.0 (2022-04-22 ucrt)
+# os       Windows 10 x64 (build 19044)
+# system   x86_64, mingw32           
 # ui       RStudio 
 
 # Set up ----
@@ -16,7 +16,7 @@ dat_path <- paste0("data/", YEAR) # directory where source data is contained
 out_path <- paste0("results/", YEAR) # directory for results/output
 dir.create(out_path)
 
-libs <- c("dplyr", "ggridges", "ggpubr", "cowplot")
+libs <- c("dplyr", "ggridges")
 if(length(libs[which(libs %in% rownames(installed.packages()) == FALSE )]) > 0) {
   install.packages(libs[which(libs %in% rownames(installed.packages()) == FALSE)])}
 lapply(libs, library, character.only = TRUE)
