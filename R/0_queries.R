@@ -23,8 +23,6 @@ out_path <- paste0("results/", YEAR); dir.create(out_path)
 # Contact AKFIN for more information.
 username_akfin = 'my_username'
 password_akfin = 'my_password'
-username_akfin = 'jsullivan'
-password_akfin = 'sculja22'
 channel_akfin <- odbcConnect("akfin", uid = username_akfin, pwd = password_akfin, believeNRows=FALSE)
 
 # INPFC_AREA look up ----
