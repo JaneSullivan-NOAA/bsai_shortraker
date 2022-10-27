@@ -21,8 +21,8 @@ out_path <- paste0("results/", YEAR); dir.create(out_path)
 # Enter your username and password for the AKFIN database. Note that these
 # credentials are different than what you may use to access AKFIN Answer.
 # Contact AKFIN for more information.
-username_akfin = 'my_username'
-password_akfin = 'my_password'
+username_akfin = 'kshotwell'
+password_akfin = 'rapt4mol'
 channel_akfin <- odbcConnect("akfin", uid = username_akfin, pwd = password_akfin, believeNRows=FALSE)
 
 # INPFC_AREA look up ----
