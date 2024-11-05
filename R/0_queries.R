@@ -1,13 +1,14 @@
 # BSAI shortraker queries
 # Sebastes borealis
 # RACE species code 30576
+# NORPAC code 326
 
 # set up ----
 
 # assessment year
-YEAR <- 2022
+YEAR <- 2024
 
-libs <- c('readr', 'dplyr', 'tidyr', 'RODBC', 'ggplot2')
+libs <- c('readr', 'dplyr', 'tidyr', 'RODBC', 'ggplot2', 'keyring','akfingapdata')
 if(length(libs[which(libs %in% rownames(installed.packages()) == FALSE )]) > 0) {install.packages(libs[which(libs %in% rownames(installed.packages()) == FALSE)])}
 lapply(libs, library, character.only = TRUE)
 
@@ -18,87 +19,118 @@ out_path <- paste0("results/", YEAR); dir.create(out_path)
 
 # database connection ----
 
-# Enter your username and password for the AKFIN database. Note that these
+# to get to GAP PRODUCTS
+# first set up secret string with AKFIN to access webservice for GAP PRODUCTS
+library(keyring)
+library(akfingapdata)
+key_list() #tells you how many keys are set up
+token <-create_token("akfin_secret")
+
+# to get to Longline Survey, need to be on VPN for this to work
+# enter your username and password for the AKFIN database. Note that these
 # credentials are different than what you may use to access AKFIN Answer.
 # Contact AKFIN for more information.
 username_akfin = 'kshotwell'
 password_akfin = 'rapt4mol'
 channel_akfin <- odbcConnect("akfin", uid = username_akfin, pwd = password_akfin, believeNRows=FALSE)
 
-# INPFC_AREA look up ----
+# to find survey and area IDs, download survey, area, and stratum group tables
+# NOTE can skip this step if all Definitions below
+survey<-get_gap_survey_design()
+area<-get_gap_area()
+stratum<-get_gap_stratum_groups()
 
-# International North Pacific Fisheries Commission (helps pull out S. Bering Sea
-# area from the AI BTS)
+# combine spatial lookup tables 
+stratum<-stratum %>%
+  left_join(survey %>%
+              # remove year specific information from survey, we only need the region codes
+              group_by(survey_definition_id) %>%
+              summarize(survey_definition_id=max(survey_definition_id)),
+            by="survey_definition_id") %>%
+  left_join(area,  by=c("area_id"="area_id", "survey_definition_id"="survey_definition_id", "design_year"="design_year"))
 
-query <- "select distinct   survey, inpfc_area as area, summary_area as area_code
-          from              afsc.race_goastrataaigoa
-          where             survey = 'AI'"
+# look for a specific area by filtering by survey and search for word such as "western", or just look through stratum table 
+region<-stratum %>%
+  filter(survey_definition_id==52,
+         grepl("western", tolower(area_name))
+  )
 
-areas <- sqlQuery(channel_akfin, query) %>% rename_all(tolower) 
+# Definitions: 
+# stock = shortraker rockfish = 30576
+# Aleutian Islands = survey definition = 52, area_id = 99904
+# Western Aleutian Islands = survey definition = 52, area_id = 299
+# Central Aleutian Islands = survey definition = 52, area_id = 3499
+# Eastern Aleutian Islands = survey definition = 52, area_id = 5699
+# Southern Bering Sea = survey definition = 52, area_id = 799
+# Eastern Bering Sea = survey definition = 98, area_id = 99900
+# Eastern Bering Sea Slope = survey definition = 78, area_id = 99905
 
-# survey  area              area_code
-# AI   Western Aleutians    299
-# AI   Central Aleutians    3499
-# AI   Eastern Aleutians    5699
-# AI   Southern Bering Sea  799
+# globals for database queries
+species_code=30576
+start_year=1990
+end_year=3000
 
 # AI Survey biomass ----
 
-query <- "select   survey, year, summary_area as area_code, species_code, 
-                   area_biomass as biomass, biomass_var as var
-          from     afsc.race_biomassinpfcaigoa
-          where    species_code in ('30576') and
-                   survey = 'AI'"
+wai <- get_gap_biomass(survey_definition_id = 52,
+                               area_id = 299,
+                               species_code = species_code,
+                               start_year = start_year,
+                               end_year = end_year) %>% 
+  write_csv(paste0(raw_path, "/wai_biomass_raw_", YEAR, ".csv"))
 
-ai <- sqlQuery(channel_akfin, query) %>% 
-  write_csv(paste0(raw_path, "/ai_biomass_raw_", YEAR, ".csv"))
+cai <- get_gap_biomass(survey_definition_id = 52,
+                       area_id = 3499,
+                       species_code = species_code,
+                       start_year = start_year,
+                       end_year = end_year) %>% 
+  write_csv(paste0(raw_path, "/cai_biomass_raw_", YEAR, ".csv"))
 
+eai <- get_gap_biomass(survey_definition_id = 52,
+                       area_id = 5699,
+                       species_code = species_code,
+                       start_year = start_year,
+                       end_year = end_year) %>% 
+  write_csv(paste0(raw_path, "/eai_biomass_raw_", YEAR, ".csv"))
+
+sbs <- get_gap_biomass(survey_definition_id = 52,
+                       area_id = 799,
+                       species_code = species_code,
+                       start_year = start_year,
+                       end_year = end_year) %>% 
+  write_csv(paste0(raw_path, "/sbs_biomass_raw_", YEAR, ".csv"))
+
+ai <- rbind(wai,cai,eai,sbs) 
 ai <- ai %>% 
-  rename_all(tolower) %>% 
-  left_join(areas) %>% 
+  #left_join(areas) %>% 
   arrange(species_code, year) %>% 
-  mutate(area = case_when(area == "Southern Bering Sea" ~ "SBS",
-                          area == "Eastern Aleutians" ~ "AI",
-                          area == "Western Aleutians" ~ "AI",
-                          area == "Central Aleutians" ~ "AI"))
+  mutate(area = case_when(area_id == 799 ~ "SBS",
+                          area_id == 5699 ~ "AI",
+                          area_id == 3499 ~ "AI",
+                          area_id == 299 ~ "AI"))
+
 ai <- ai %>% 
   group_by(year, area) %>% 
-  summarize(biomass = sum(biomass),
-            var = sum(var))
+  summarize(biomass = sum(biomass_mt),
+            var = sum(biomass_var)) 
 
-# EBS shelf ----
+# EBS slope biomass----
 
-# query <- "select   survey, year, species_code, 
-#                    biomass, varbio as var
-#           from     afsc.race_biomass_ebsshelf_standard
-#           where    species_code in ('30576') and 
-#                    stratum in ('999')"
-# 
-# ebs_shelf <- sqlQuery(channel_akfin, query) %>% 
-#   write_csv(paste0(raw_path, "/ebs_shelf_biomass_raw_", YEAR, ".csv"))
-# 
-# ebs_shelf <- ebs_shelf %>% 
-#   rename_all(tolower) %>% 
-#   arrange(species_code, year) %>% 
-#   mutate(area = "EBS Shelf")
-
-# EBS slope ----
-
-query <- "select   year, species_code, 
-                   stratum_biomass as biomass, bio_var as var
-          from     afsc.race_biomass_ebsslope
-          where    species_code in ('30576') and 
-                   stratum in ('999999')"
-
-ebs_slope <- sqlQuery(channel_akfin, query) %>% 
+ebs_slope <- get_gap_biomass(survey_definition_id = 78,
+                       area_id = 99905,
+                       species_code = species_code,
+                       start_year = start_year,
+                       end_year = end_year) %>% 
   write_csv(paste0(raw_path, "/ebs_slope_biomass_raw_", YEAR, ".csv"))
 
+ebs_slope <- ebs_slope %>% 
+  arrange(species_code, year) %>% 
+  mutate(area = "EBS Slope") 
 
 ebs_slope <- ebs_slope %>% 
-  rename_all(tolower) %>% 
-  arrange(species_code, year) %>% 
-  mutate(survey = "EBS_SLOPE",
-         area = "EBS Slope")
+  group_by(year, area) %>% 
+  summarize(biomass = sum(biomass_mt),
+            var = sum(biomass_var))
 
 # Write biomass data ----
 
@@ -130,14 +162,16 @@ cpue_dat <- lls %>%
                    cv = sqrt(sum(rpw_var, na.rm = TRUE)) / cpue) %>% 
   write_csv(paste0(dat_path, "/bsai_shortraker_rpw_", YEAR, ".csv")) 
 
+# check plots ----
+
 ggplot() +
   geom_line(data = biomass_dat, aes(x = year, y = biomass)) + 
   geom_point(data = biomass_dat, aes(x = year, y = biomass)) + 
   geom_line(data = cpue_dat, aes(x = year, y = cpue), col = 'green') + 
   geom_point(data = cpue_dat, aes(x = year, y = cpue), col = 'green') + 
-  facet_wrap(~strata) 
-
-# Fishery lengths ----
+  facet_wrap(~strata) +
+theme_bw()
+# Fishery lengths lookup ----
 
 # Look up table for NMFS areas in the BSAI FMP
 
@@ -172,48 +206,38 @@ fsh_len <- fsh_len %>%
 # Survey lengths ----
 
 # AI
-query <- "select   survey, year, stratum, length / 10 as length, species_code, 
-                   total as frequency
-          from     afsc.race_sizestratumaigoa
-          where    species_code in ('30576') and
-                   survey = 'AI'"
-
-ai_len <- sqlQuery(channel_akfin, query) %>% 
+ai_len <- get_gap_sizecomp(survey_definition_id = 52,
+                                 area_id = 99904,
+                                 species_code = species_code,
+                                 start_year = start_year,
+                                 end_year = end_year) %>%
+  filter(length_mm>=0)%>%
+  mutate(sex=factor(case_match(sex, 1~"male", 2~"female", 3~"unsexed"),
+                    levels=c("male", "female", "unsexed")))%>% 
   write_csv(paste0(raw_path, "/ai_survey_lengths_shortraker_raw_", YEAR, ".csv"))
 
-ai_strata <- sqlQuery(channel_akfin,
-                      "select distinct   survey, regulatory_area_name, inpfc_area as area,
-                            stratum, min_depth, max_depth, area
-          from              afsc.race_goastrataaigoa
-          where             survey in ('AI')
-          order by          regulatory_area_name asc, min_depth asc") %>% 
-  rename_all(tolower) %>% 
-  distinct(area, stratum, min_depth, max_depth, fmp = regulatory_area_name) %>% 
-  mutate(description = paste0(area, ' (', min_depth, '-', max_depth, ' m)')) %>% 
-  mutate(description = paste0(min_depth, '-', max_depth, ' m')) %>% 
-  distinct(area, stratum, description)
-
-ai_strata
-
 ai_len <- ai_len %>% 
-  rename_all(tolower) %>% 
-  left_join(ai_strata) %>% 
-  filter(area != 'Chirikof') %>% 
-  mutate(area = ifelse(grepl('Aleutians', area), 'AI', 'SBS')) %>% 
-  arrange(species_code, area, year, length) 
+  group_by(length_mm, year) %>% 
+  summarise(frequency = sum(population_count, na.rm = TRUE)) %>% 
+  mutate(length = length_mm/10, species_code = 30576, fmp_subarea = 'AI', source = 'AI BTS') %>%
+  ungroup()
 
-# EBS slope
-query <- "select   survey, year, stratum, length / 10 as length, species_code, 
-                   total as frequency
-          from     afsc.race_sizecomp_ebsslope
-          where    species_code in ('30576') and length < 999"
-
-ebs_slope_len <- sqlQuery(channel_akfin, query) %>% 
+# EBS slope, make sure to convert to cm, ungroup to get rid of other
+ebs_slope_len <- get_gap_sizecomp(survey_definition_id = 78,
+                           area_id = 99905,
+                           species_code = species_code,
+                           start_year = start_year,
+                           end_year = end_year) %>%
+  filter(length_mm>=0)%>%
+  mutate(sex=factor(case_match(sex, 1~"male", 2~"female", 3~"unsexed"),
+                    levels=c("male", "female", "unsexed")))%>% 
   write_csv(paste0(raw_path, "/ebs_slope_survey_lengths_shortraker_raw_", YEAR, ".csv"))
 
 ebs_slope_len <- ebs_slope_len %>% 
-  rename_all(tolower) %>% 
-  arrange(species_code, year, length)
+  group_by(length_mm, year) %>% 
+  summarise(frequency = sum(population_count, na.rm = TRUE)) %>% 
+  mutate(length = length_mm/10, species_code = 30576, fmp_subarea = 'EBS', source = 'EBS slope BTS') %>% 
+  ungroup()
 
 # LLS lengths ----
 
@@ -237,17 +261,13 @@ comps <- fsh_len %>%
   select(species_code, year, length, frequency, fmp_subarea) %>% 
   mutate(source = paste0(fmp_subarea, " fishery")) %>% 
   bind_rows(ai_len %>% 
-              mutate(fmp_subarea = area,
-                     source = "AI BTS") %>% 
-              select(species_code, year, fmp_subarea, length, frequency, source)) %>% 
+              select(species_code, year, length, frequency, fmp_subarea, source)) %>% 
   bind_rows(ebs_slope_len %>% 
-              select(species_code, year, length, frequency) %>% 
-              mutate(fmp_subarea = "EBS",
-                     source = "EBS slope BTS")) %>% 
+              select(species_code, year, length, frequency, fmp_subarea, source)) %>% 
   bind_rows(lls_len_sum %>% 
               ungroup() %>% 
               mutate(species_code = 30576,
                      fmp_subarea = ifelse(council_sablefish_management_area == 'Aleutians', 'AI', 'EBS'),
                      source = paste0(fmp_subarea, ' LLS')) %>% 
-              select(species_code, year, fmp_subarea, length, frequency = rpw, source)) %>% 
+              select(species_code, year, length, frequency = rpw, fmp_subarea, source)) %>% 
   write_csv(paste0(dat_path, "/lengths_shortraker_", YEAR, ".csv"))
