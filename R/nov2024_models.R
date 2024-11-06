@@ -94,7 +94,6 @@ input2 <- rema::prepare_rema_input(model_name = 'M22_2022',
 
 m22 <- fit_rema(input2)
 
-
 # Model comparison ---- takes results from multiple models for model comparison
 compare <- compare_rema_models(rema_models=list(m2, m22), biomass_ylab = 'Biomass (t)', cpue_ylab = 'RPW')
 p1 <- compare$plots$biomass_by_strata + 
@@ -203,3 +202,98 @@ output2$total_predicted_biomass %>%
   filter(year %in% c(2022, 2024)) %>%
   pivot_wider(id_cols = model_name, names_from = year, values_from = pred) %>%
   mutate(percent_change = (`2024`-`2022`)/`2022` * 100)
+
+# pool PE -----
+input_poolPE <- rema::prepare_rema_input(model_name = 'MpoolPE_2024',
+                                  multi_survey = 1, # fit to CPUE data? yes = 1)
+                                  biomass_dat = biomass_dat,
+                                  cpue_dat = cpue_dat,
+                                  sum_cpue_index = 1, # is the CPUE index summable (yes = 1, RPWs are summable)
+                                  zeros = list(assumption = 'NA'),
+                                  end_year = YEAR,
+                                  # pool process error
+                                  PE_options = list(pointer_PE_biomass = c(1, 1, 1)),
+                                  # sort(unique(biomass_dat$strata)) = 
+                                  # "AI" "EBS Slope" "SBS" 
+                                  # EBS Slope is stratum 2 for the biomass so we put it in
+                                  # the second position of the
+                                  # pointer_biomass_cpue_strata object and use NAs for
+                                  # the other 2 strata. It is the first (and only)
+                                  # stratum for the LLS, so we use the
+                                  # value of 1. See Details in ?prepare_rema_input
+                                  q_options = list(pointer_biomass_cpue_strata = c(NA, 1, NA)))
+
+m_poolPE <- fit_rema(input_poolPE)
+output_poolPE <- tidy_rema(m_poolPE)
+
+compare <- compare_rema_models(rema_models=list(m2, m_poolPE), biomass_ylab = 'Biomass (t)', cpue_ylab = 'RPW')
+p1 <- compare$plots$biomass_by_strata + 
+  facet_wrap(~strata, scales = 'free_y', ncol = 1) +
+  ggplot2::scale_fill_viridis_d(direction = -1, option = "E") +
+  ggplot2::scale_colour_viridis_d(direction = -1, option = "E") +
+  labs(title = 'Bottom trawl survey (BTS) biomass (t) by region') +
+  theme_bw()
+
+p1
+
+ggsave(paste0(out_path, '/M24_MpoolPE_biomass_fits_bw.png'), units = 'in', bg = 'white',
+       height = 7.5, width = 6.5, dpi = 300)
+
+p2 <- compare$plots$cpue_by_strata + 
+  facet_wrap(~strata, scales = 'free_y', ncol = 1)+
+  ggplot2::scale_fill_viridis_d(direction = -1, option = "E") +
+  ggplot2::scale_colour_viridis_d(direction = -1, option = "E") +
+  labs(title = 'Longline survey (LLS) relative population weights (RPW)') +
+  theme_bw()
+p2
+ggsave(paste0(out_path, '/M24_MpoolPE_fit_slope_bw.png'), units = 'in', bg = 'white',
+       height = 3.5, width = 7, dpi = 300)
+
+cowplot::plot_grid(p1, p2, 
+                   ncol = 1, rel_heights = c(0.7, 0.3),align="v")
+ggsave(paste0(out_path, '/M24_MpoolPE_bts_lls_bw.png'), units = 'in', bg = 'white',
+       height = 7.5, width = 7, dpi = 300)
+
+# total biomass and biomass by strata ----
+compare$output$total_predicted_biomass %>% 
+  write_csv(paste0(out_path, '/total_biomass_M24_MpoolPE.csv'))
+compare$output$biomass_by_strata %>% 
+  write_csv(paste0(out_path, '/biomass_by_strata_M24_MpoolPE.csv'))
+
+p3 <- compare$plots$total_predicted_biomass +
+  ggplot2::scale_fill_viridis_d(direction = -1, option = "E") +
+  ggplot2::scale_colour_viridis_d(direction = -1, option = "E") +
+  expand_limits(y=0)+
+  labs(title = 'Total predicted biomass') +
+  theme_bw()
+p3
+ggsave(paste0(out_path, '/M24_MpoolPE_total_biomass_bw.png'), units = 'in', bg = 'white',
+       height = 4, width = 7, dpi = 300)
+
+cowplot::plot_grid(p1, p2, p3,
+                   ncol = 1, rel_heights = c(0.7, 0.3, 0.3),align="v")
+ggsave(paste0(out_path, '/M24_MpoolPE.png'), units = 'in', bg = 'white',
+       height = 10, width = 7, dpi = 300)
+
+
+
+biom_poolPE <- output_poolPE$total_predicted_biomass %>% 
+  select(model_name, year, biomass = pred) 
+
+sumtable_poolPE <- biom_poolPE %>% 
+  filter(year == YEAR) %>% 
+  mutate(M = 0.03,
+         OFL = M * biomass,
+         maxABC = 0.75 * M * biomass)
+
+sumtable_poolPE %>%
+  bind_rows(sumtable) %>% 
+  write_csv(paste0(out_path, '/abc_ofl_summary_M24_MpoolPE.csv'))
+
+output_poolPE$parameter_estimates %>% 
+  mutate(strata=c("BSAI-WIDE","EBS_SLOPE")) %>% 
+  bind_rows(output2$parameter_estimates %>% 
+              mutate(strata=c("AI","EBS_SLOPE","SBS","EBS_SLOPE"))) %>% 
+  arrange(model_name) %>%
+  relocate(strata, .before = parameter) %>% 
+  write_csv(paste0(out_path, '/parameters_estimates_M24_MpoolPE.csv'))
